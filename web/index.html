@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>图片展示与比例尺</title>
+    <link rel="stylesheet" href="index.css" />
+  </head>
+  <body>
+    <div class="container">
+      <!-- 图片展示区 -->
+      <div class="image-display">
+        <div
+          style="position: relative; width: max-content; height: max-content"
+        >
+          <img id="image" src="" alt="图片展示区" style="display: none" />
+          <div id="rulerX" class="ruler horizontal"></div>
+          <div id="rulerY" class="ruler vertical"></div>
+        </div>
+      </div>
+
+      <!-- 控制按钮 -->
+      <div class="controls">
+        <button id="prevButton" title="上一项（←）或（↑）">←</button>
+        <button id="confirmButton" title="裁剪（Z）">✔</button>
+        <button id="cancelButton" title="不裁剪（X）">✖</button>
+        <button id="nextButton" title="下一项（→）或（↓）">→</button>
+        <input type="number" id="heightInput" placeholder="输入高度" title="输入字幕高度（T）"/>
+        <button id="addImageButton" title="添加图片（I）">添加图片</button>
+        <button id="startButton" title="开始（Enter）">开始</button>
+        <button id="newButton" title="新建待合并图片（N）">新建</button>
+      </div>
+
+      <!-- 列表容器 -->
+      <div class="list-container">
+        <ul id="itemList"></ul>
+      </div>
+    </div>
+    <script src="script.js"></script>
+  </body>
+</html>
