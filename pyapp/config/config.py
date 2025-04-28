@@ -24,7 +24,7 @@ class Config:
     # 程序基础配置信息
     ##
     appName = '对话图片拼接器（暂定）'  # 应用名称
-    appNameEN = 'DialogueImgSplicer'    # 应用名称-英文（用于生成缓存文件夹，必须是英文）
+    appNameEN = 'Dialogix'    # 应用名称-英文（用于生成缓存文件夹，必须是英文）
     appVersion = "V1"  # 应用版本号
     appDeveloper = "Z在此"  # 应用开发者
     appBlogs = "https://space.bilibili.com/397283120"  # 个人博客
