@@ -1,0 +1,577 @@
+// 获取 DOM 元素
+const fileInput = document.createElement("input");
+fileInput.type = "file";
+fileInput.accept = "image/*";
+fileInput.multiple = true;
+
+const image = document.getElementById("image");
+const rulerX = document.getElementById("rulerX");
+const rulerY = document.getElementById("rulerY");
+const itemList = document.getElementById("itemList");
+const addImageButton = document.getElementById("addImageButton");
+const confirmButton = document.getElementById("confirmButton");
+const cancelButton = document.getElementById("cancelButton");
+let lastSelectedIndex = null;
+
+// 添加图片按钮点击事件
+// addImageButton.addEventListener("click", () => {
+//     fileInput.value = "";
+//     fileInput.click();
+// });
+
+// 文件选择事件
+addImageButton.addEventListener("click", async () => {
+    // const files = fileInput.files;
+    const files = await pywebview.api.get_files();
+
+    if (files.length > 0) {
+        const wasEmpty = itemList.children.length === 0; // 记录添加前是否为空
+        Array.from(files).forEach((file) => {
+            // JS 端：构造 File 对象
+            const {name, data, mime} = file;
+            const file1 = new File(
+                [new Uint8Array(data)],
+                name,
+                {type: mime}
+            );
+
+
+            const listItem = document.createElement("li");
+            listItem.textContent = file.name;
+            listItem.dataset.fileUrl = URL.createObjectURL(file1);
+            listItem.classList.add("selectable");
+            listItem.draggable = true; // 使列表项可拖动
+            listItem.tabIndex = 0; // 使列表项可聚焦
+            listItem.title = file.name; // 添加 title 属性以显示完整文件名
+            listItem.dataset.path = file.path; // 添加 path 属性以显示路径
+
+            itemList.appendChild(listItem);
+
+            // 点击列表项选择并展示图片
+            listItem.addEventListener("click", (e) => {
+                if (e.ctrlKey) {
+                    // Ctrl 单选
+                    listItem.classList.toggle("selected");
+                } else if (e.shiftKey && lastSelectedIndex !== null) {
+                    // Shift 连续选择
+                    const items = Array.from(itemList.children);
+                    const currentIndex = items.indexOf(listItem);
+                    const [start, end] = [lastSelectedIndex, currentIndex].sort(
+                        (a, b) => a - b
+                    );
+                    for (let i = start; i <= end; i++) {
+                        items[i].classList.add("selected");
+                    }
+                } else {
+                    // 单击取消其他选择，仅选择当前项
+                    Array.from(itemList.children).forEach((child) =>
+                        child.classList.remove("selected")
+                    );
+                    listItem.classList.add("selected");
+                }
+                lastSelectedIndex = Array.from(itemList.children).indexOf(listItem);
+
+                // 展示图片
+                switchImage(listItem.dataset.fileUrl);
+            });
+
+            // 拖动排序功能
+            listItem.addEventListener("dragstart", (e) => {
+                e.dataTransfer.setData("text/plain", listItem.dataset.fileUrl);
+                listItem.classList.add("dragging");
+            });
+
+            listItem.addEventListener("dragend", () => {
+                listItem.classList.remove("dragging");
+                const placeholders = document.querySelectorAll(".placeholder");
+                placeholders.forEach((placeholder) => placeholder.remove());
+            });
+
+            itemList.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                const draggingItem = document.querySelector(".dragging");
+                const afterElement = getDragAfterElement(itemList, e.clientY);
+                let placeholder = document.querySelector(".placeholder");
+
+                // 如果占位符不存在，则创建
+                if (!placeholder) {
+                    placeholder = document.createElement("li");
+                    placeholder.classList.add("placeholder");
+                    placeholder.style.height = "2px";
+                    placeholder.style.backgroundColor = "#007BFF";
+                    placeholder.style.borderRadius = "1px";
+                    placeholder.style.margin = "0";
+                    placeholder.style.padding = "0";
+                    placeholder.style.lineHeight = "0";
+                }
+
+                // 插入占位符
+                if (afterElement == null) {
+                    itemList.appendChild(placeholder);
+                } else {
+                    itemList.insertBefore(placeholder, afterElement);
+                }
+            });
+
+            itemList.addEventListener("drop", (e) => {
+                e.preventDefault();
+                const draggingItem = document.querySelector(".dragging");
+                const afterElement = getDragAfterElement(itemList, e.clientY);
+                const placeholders = document.querySelectorAll(".placeholder");
+                placeholders.forEach((placeholder) => placeholder.remove());
+
+                // 插入拖动的项
+                if (afterElement == null) {
+                    itemList.appendChild(draggingItem);
+                } else {
+                    itemList.insertBefore(draggingItem, afterElement);
+                }
+            });
+        });
+
+        // 如果添加前列表为空，自动选中第一项并显示图片
+        if (wasEmpty && itemList.children.length > 0) {
+            const firstItem = itemList.children[0];
+            firstItem.classList.add("selected");
+            switchImage(firstItem.dataset.fileUrl);
+        }
+    }
+    // 添加完图片后，焦点回到窗口
+    if (document.activeElement && document.activeElement !== document.body) {
+        document.activeElement.blur();
+    }
+});
+
+// 获取拖动后目标位置的元素
+function getDragAfterElement(container, y) {
+    const draggableElements = [
+        ...container.querySelectorAll("li:not(.dragging)"),
+    ];
+
+    return draggableElements.reduce(
+        (closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+            if (offset < 0 && offset > closest.offset) {
+                return {offset: offset, element: child};
+            } else {
+                return closest;
+            }
+        },
+        {offset: Number.NEGATIVE_INFINITY}
+    ).element;
+}
+
+// 更新比例尺
+function updateRulers() {
+    const displayedWidth = image.clientWidth;
+    const displayedHeight = image.clientHeight;
+
+    rulerX.style.width = `${displayedWidth}px`;
+    rulerY.style.height = `${displayedHeight}px`;
+
+    rulerX.innerHTML = "";
+    rulerY.innerHTML = "";
+
+    // X方向从右向左显示刻度
+    for (let i = 0; i <= displayedWidth; i += 10) {
+        const mark = document.createElement("div");
+        mark.style.position = "absolute";
+        mark.style.right = `${i}px`;
+        mark.style.height = "10px";
+        mark.style.borderLeft = "1px solid black";
+
+        if (i % 50 === 0) {
+            const label = document.createElement("span");
+            label.textContent = i;
+            label.style.position = "absolute";
+            label.style.top = "12px";
+            label.style.transform = "translateX(-50%)";
+            label.style.fontSize = "12px";
+            mark.appendChild(label);
+        }
+
+        rulerX.appendChild(mark);
+    }
+
+    // Y方向从下向上显示刻度
+    for (let i = 0; i <= displayedHeight; i += 10) {
+        const mark = document.createElement("div");
+        mark.style.position = "absolute";
+        mark.style.bottom = `${i}px`;
+        mark.style.width = "10px";
+        mark.style.borderTop = "1px solid black";
+
+        if (i % 50 === 0) {
+            const label = document.createElement("span");
+            label.textContent = i;
+            label.style.position = "absolute";
+            label.style.left = "12px";
+            label.style.transform = "translateY(-50%)";
+            label.style.fontSize = "12px";
+            mark.appendChild(label);
+        }
+
+        rulerY.appendChild(mark);
+    }
+}
+
+// 为 confirmButton 添加功能
+confirmButton.addEventListener("click", () => {
+    let value = heightInput.value.trim();
+
+    // 预先纠正：如果不是正整数，提示无效
+    if (!/^\d+$/.test(value) || parseInt(value, 10) < 1) {
+        heightInput.focus();
+        tFocusFlag = true;
+        alert("请输入有效的高度值！");
+        heightInput.value = ""; // 清空输入框的值
+
+        return;
+    }
+    const heightInputValue = parseInt(value, 10);
+
+    // 验证输入的高度值是否有效
+    if (isNaN(heightInputValue) || heightInputValue <= 0) {
+        heightInput.focus();
+        tFocusFlag = true;
+        alert("请输入有效的高度值！");
+        heightInput.value = ""; // 清空输入框的值
+
+        return;
+    }
+
+    // 确保图片已加载并显示
+    if (image.style.display === "none" || !image.src) {
+        alert("当前没有图片可添加遮罩！");
+        return;
+    }
+
+    // 验证输入的高度是否超过图片高度
+    if (heightInputValue > image.clientHeight) {
+        heightInput.focus();
+        tFocusFlag = true;
+        alert("输入的高度不能大于图片的高度！");
+        heightInput.value = ""; // 清空输入框的值
+
+        return;
+    }
+
+    // 获取当前选中的列表项
+    const selectedItem = itemList.querySelector(".selected");
+    if (!selectedItem) {
+        alert("请先选择一个图片项！");
+        return;
+    }
+
+    // 计算遮罩高度为图片高度减去输入值
+    const overlayHeight = Math.max(0, image.clientHeight - heightInputValue);
+
+    // 如果图片已经有遮罩，先移除旧的遮罩
+    const existingOverlay = image.parentElement.querySelector(".overlay");
+    if (existingOverlay) {
+        existingOverlay.remove();
+    }
+
+    // 创建遮罩
+    const overlay = document.createElement("div");
+    overlay.classList.add("overlay");
+    overlay.style.position = "absolute";
+    overlay.style.top = `${image.offsetTop}px`;
+    overlay.style.left = `${image.offsetLeft}px`;
+    overlay.style.width = `${image.clientWidth}px`;
+    overlay.style.height = `${overlayHeight}px`;
+    overlay.style.backgroundColor = "rgba(128, 128, 128, 0.5)";
+    overlay.style.pointerEvents = "none";
+
+    // 将遮罩添加到图片的父容器上
+    image.parentElement.appendChild(overlay);
+
+    // 将遮罩信息与当前选中的列表项绑定
+    selectedItem.dataset.overlayHeight = overlayHeight;
+});
+
+// 为 cancelButton 添加功能
+cancelButton.addEventListener("click", () => {
+    // 确保图片已加载并显示
+    if (image.style.display === "none" || !image.src) {
+        alert("当前没有图片可取消遮罩！");
+        return;
+    }
+
+    // 获取当前选中的列表项
+    const selectedItem = itemList.querySelector(".selected");
+    if (!selectedItem) {
+        alert("请先选择一个图片项！");
+        return;
+    }
+
+    // 移除图片上的遮罩
+    const existingOverlay = image.parentElement.querySelector(".overlay");
+    if (existingOverlay) {
+        existingOverlay.remove();
+    }
+
+    // 清除与图片项关联的遮罩数据
+    delete selectedItem.dataset.overlayHeight;
+});
+
+// 切换图片时显示内部div
+function switchImage(newImageSrc) {
+    // 移除当前图片的遮罩
+    const existingOverlay = image.parentElement.querySelector(".overlay");
+    if (existingOverlay) {
+        existingOverlay.remove();
+    }
+
+    // 切换到新图片
+    image.src = newImageSrc;
+    image.style.display = "block";
+
+    // 显示内部div
+    const imageDisplay = document.querySelector(".image-display");
+    const innerDiv = imageDisplay.querySelector("div");
+    if (innerDiv) {
+        innerDiv.style.display = "block";
+    }
+
+    // 等待图片加载完成后执行
+    image.onload = () => {
+        updateRulers();
+
+        // 获取当前选中的列表项
+        const selectedItem = itemList.querySelector(".selected");
+        if (selectedItem && selectedItem.dataset.overlayHeight) {
+            // 恢复遮罩
+            const overlayHeight = parseInt(selectedItem.dataset.overlayHeight, 10);
+            const overlay = document.createElement("div");
+            overlay.classList.add("overlay");
+            overlay.style.position = "absolute";
+            overlay.style.top = `${image.offsetTop}px`;
+            overlay.style.left = `${image.offsetLeft}px`;
+            overlay.style.width = `${image.clientWidth}px`;
+            overlay.style.height = `${overlayHeight}px`;
+            overlay.style.backgroundColor = "rgba(128, 128, 128, 0.5)";
+            overlay.style.pointerEvents = "none";
+
+            // 将遮罩添加到图片的父容器上
+            image.parentElement.appendChild(overlay);
+        }
+
+        // 滚动条调整逻辑
+        imageDisplay.scrollLeft = imageDisplay.scrollWidth;
+        imageDisplay.scrollTop = imageDisplay.scrollHeight;
+    };
+}
+
+// 为 prevButton 添加功能
+document.getElementById("prevButton").addEventListener("click", () => {
+    const selectedItem = itemList.querySelector(".selected");
+    if (selectedItem) {
+        let prevItem = selectedItem.previousElementSibling;
+        if (!prevItem) {
+            // 如果当前是第一项，则切换到最后一项
+            prevItem = itemList.lastElementChild;
+        }
+        // 切换选中状态
+        selectedItem.classList.remove("selected");
+        prevItem.classList.add("selected");
+
+        // 切换图片
+        switchImage(prevItem.dataset.fileUrl);
+    }
+});
+
+// 修改 nextButton 的功能，添加循环切换
+document.getElementById("nextButton").addEventListener("click", () => {
+    const selectedItem = itemList.querySelector(".selected");
+    if (selectedItem) {
+        let nextItem = selectedItem.nextElementSibling;
+        if (!nextItem) {
+            // 如果当前是最后一项，则切换到第一项
+            nextItem = itemList.firstElementChild;
+        }
+        // 切换选中状态
+        selectedItem.classList.remove("selected");
+        nextItem.classList.add("selected");
+
+        // 切换图片
+        switchImage(nextItem.dataset.fileUrl);
+    }
+});
+
+// 删除选中项的通用逻辑
+function deleteSelectedItems() {
+    const selectedItems = Array.from(itemList.querySelectorAll(".selected"));
+    selectedItems.forEach((item) => {
+        const nextSibling = item.nextElementSibling;
+        const prevSibling = item.previousElementSibling;
+
+        // 如果删除的是当前选中项，选中下一项或上一项
+        if (item.classList.contains("selected")) {
+            if (nextSibling) {
+                nextSibling.classList.add("selected");
+                switchImage(nextSibling.dataset.fileUrl);
+            } else if (prevSibling) {
+                prevSibling.classList.add("selected");
+                switchImage(prevSibling.dataset.fileUrl);
+            } else {
+                // 如果没有下一项或上一项，隐藏图片并移除遮罩
+                image.style.display = "none";
+                rulerX.innerHTML = "";
+                rulerY.innerHTML = "";
+
+                // 移除遮罩
+                const existingOverlay = image.parentElement.querySelector(".overlay");
+                if (existingOverlay) {
+                    existingOverlay.remove();
+                }
+            }
+        }
+
+        // 删除当前项
+        item.remove();
+    });
+
+    // 如果列表为空，隐藏图片和比例尺，并移除遮罩，并隐藏内部div
+    if (itemList.children.length === 0) {
+        image.style.display = "none";
+        rulerX.innerHTML = "";
+        rulerY.innerHTML = "";
+
+        // 移除遮罩
+        const existingOverlay = image.parentElement.querySelector(".overlay");
+        if (existingOverlay) {
+            existingOverlay.remove();
+        }
+
+        // 关键：隐藏内部div，彻底消除滚动条
+        const imageDisplay = document.querySelector(".image-display");
+        const innerDiv = imageDisplay.querySelector("div");
+        if (innerDiv) {
+            innerDiv.style.display = "none";
+        }
+    }
+}
+
+// 为 newButton 添加初始化功能
+const newButton = document.getElementById("newButton");
+newButton.addEventListener("click", () => {
+    // 清空列表项
+    itemList.innerHTML = "";
+
+    // 清空高度输入框
+    document.getElementById("heightInput").value = "";
+
+    // 隐藏图片和比例尺内容
+    image.style.display = "none";
+    image.src = "";
+    rulerX.innerHTML = "";
+    rulerY.innerHTML = "";
+
+    // 移除遮罩
+    const existingOverlay = image.parentElement.querySelector(".overlay");
+    if (existingOverlay) {
+        existingOverlay.remove();
+    }
+
+    // 关键：隐藏内部div，彻底消除滚动条
+    const imageDisplay = document.querySelector(".image-display");
+    const innerDiv = imageDisplay.querySelector("div");
+    if (innerDiv) {
+        innerDiv.style.display = "none";
+    }
+
+    // 滚动条重置
+    imageDisplay.scrollLeft = 0;
+    imageDisplay.scrollTop = 0;
+
+    window.lastSelectedIndex = null;
+});
+
+let tFocusFlag = false;
+const heightInput = document.getElementById("heightInput");
+const prevButton = document.getElementById("prevButton");
+const nextButton = document.getElementById("nextButton");
+
+
+// 监听输入框的 focus 事件，确保 tFocusFlag 正确设置
+heightInput.addEventListener("focus", () => {
+    tFocusFlag = true;
+});
+
+// 监听输入框的 blur 事件，确保失焦后 tFocusFlag 被重置
+heightInput.addEventListener("blur", () => {
+    tFocusFlag = false;
+});
+
+// 监听键盘事件
+document.addEventListener("keydown", (e) => {
+    const active = document.activeElement;
+    const isInput =
+        active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA");
+
+    // delete 删除选中项
+    if (e.key === "Delete") {
+        deleteSelectedItems();
+    }
+
+    // 在 heightInput 聚焦时，按 Enter 回到窗口（优先级最高，提前判断）
+    if (e.key === "Enter" && active === heightInput && tFocusFlag) {
+        heightInput.blur();
+        tFocusFlag = false;
+        e.preventDefault();
+        return; // 阻止后续快捷键处理
+    }
+
+    // n 新建
+    if (e.key === "n" && !isInput) {
+        newButton.click();
+        e.preventDefault();
+    }
+
+    // z 确认
+    if (e.key === "z" && !isInput) {
+        confirmButton.click();
+        e.preventDefault();
+    }
+    // x 取消
+    if (e.key === "x" && !isInput) {
+        cancelButton.click();
+        e.preventDefault();
+    }
+    // i 添加图片
+    if (e.key === "i" && !isInput) {
+        addImageButton.click();
+        e.preventDefault();
+    }
+    // ↑或← 上一项
+    if ((e.key === "ArrowUp" || e.key === "ArrowLeft") && !isInput) {
+        prevButton.click();
+        e.preventDefault();
+    }
+    // ↓或→ 下一项
+    if ((e.key === "ArrowDown" || e.key === "ArrowRight") && !isInput) {
+        nextButton.click();
+        e.preventDefault();
+    }
+    // t 聚焦/取消聚焦高度输入框
+    if (e.key === "t") {
+        if (!isInput) {
+            heightInput.focus();
+            tFocusFlag = true;
+            e.preventDefault();
+        } else if (active === heightInput && tFocusFlag) {
+            heightInput.blur();
+            tFocusFlag = false;
+            e.preventDefault();
+        }
+    }
+});
+
+
+startButton.addEventListener("click", () => {
+    window.pywebview.api.joint_function()
+
+});
+
